@@ -3,7 +3,7 @@ import { kv } from './db.js';
 import { icon } from './icons.js';
 import { setBundled, setWebMode, imgTag, hydrate, staticSrc } from './images.js';
 import { getConfig, setConfig, fetchMeta, pullRemote, parseInvite, readPackage } from './sync.js';
-import { notify, pickFiles, APP_VERSION, isTauri } from './platform.js';
+import { notify, pickFiles, APP_VERSION, isTauri, openUrl } from './platform.js';
 
 // Web version (iPhone/iPad/Mac in the browser): nothing is shipped, members unlock with the invite code.
 export const WEB = !isTauri() && (location.hostname.endsWith('github.io') || new URLSearchParams(location.search).has('web'));
@@ -660,7 +660,7 @@ function viewSettings() {
       ${isAdmin()
         ? `<a class="set-row click" href="#/admin" style="text-decoration:none;color:inherit"><div class="ic">${icon('crown')}</div><div class="tx"><b>Verwaltung öffnen</b><span>Inhalte, Kapitel, Veröffentlichen</span></div>${icon('right')}</a>
            <div class="set-row click" data-act="adminOff"><div class="ic">${icon('logout')}</div><div class="tx"><b>Admin-Modus beenden</b><span>Zurück zur Mitglieder-Ansicht</span></div></div>`
-        : WEB ? '<div class="set-row"><div class="tx"><span>Bearbeiten geht nur in der Windows- oder Android-App.</span></div></div>' : `<div class="set-row click" data-act="adminLogin"><div class="ic">${icon('lock')}</div><div class="tx"><b>Admin-Modus</b><span>Nur für den Vorstand – mit PIN</span></div>${icon('right')}</div>`}
+        : WEB ? '<div class="set-row"><div class="tx"><span>Bearbeiten geht nur in der Windows- oder Android-App.</span></div></div>' : `<div class="set-row click" data-act="adminLogin"><div class="ic">${icon('lock')}</div><div class="tx"><b>Admin-Modus</b><span>Nur für den L Präsidäntä – mit GitHub-Token</span></div>${icon('right')}</div>`}
     </div></div>
 
     <div class="settings-group"><h2>Über</h2><div class="card pad" style="text-align:center">
@@ -796,20 +796,47 @@ async function importPackage() {
   render();
 }
 
+/** Checks with GitHub that the token may write to the club's repository – only then is a device allowed to become admin. */
+async function verifyAdminToken(token) {
+  const r = await fetch(`https://api.github.com/repos/${S.sync.owner}/${S.sync.repo}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store',
+  }).catch(() => null);
+  if (!r) throw new Error('Keine Internetverbindung – die Prüfung braucht Internet.');
+  if (r.status === 401) throw new Error('Dieser Token ist ungültig oder abgelaufen.');
+  const d = r.ok ? await r.json() : null;
+  if (!d || !d.permissions || !d.permissions.push) throw new Error('Dieser Token hat keine Schreibrechte für das Vereins-Jahrbuch – kein Admin-Zugang.');
+}
+
 async function adminLogin() {
-  if (!S.admin.pinHash) {
-    const m = modal(`<h2>Admin-PIN festlegen</h2><p class="lead">Mit dieser PIN schaltest du auf diesem Gerät den Bearbeitungsmodus frei.</p>
-      <label class="field"><span>Neue PIN (mind. 4 Zeichen)</span><input class="input" type="password" id="p1" autofocus inputmode="numeric"></label>
+  if (WEB) return;
+  // A device becomes admin only once, by proving it holds the GitHub token with write access.
+  if (!S.admin.token || !S.admin.pinHash) {
+    if (!S.sync) return toast('Zuerst mit dem Verein verbinden (Einladungscode), dann den Admin-Zugang einrichten.', 'info', 7000);
+    const m = modal(`<h2>Admin-Zugang einrichten</h2>
+      <p class="lead">Admin kann nur werden, wer den GitHub-Token mit Schreibrechten für das Vereins-Jahrbuch hat. Die App prüft das bei GitHub.</p>
+      <label class="field"><span>GitHub-Token</span><input class="input" type="password" id="tk" autofocus autocomplete="off" placeholder="ghp_…">
+        <small>Steht auf deinem PC unter Verwaltung → Verteilung (Anzeigen), oder <a href="#" id="newTk">neuen Token bei GitHub erstellen</a>.</small></label>
+      <label class="field"><span>Admin-PIN für dieses Gerät (mind. 4 Zeichen)</span><input class="input" type="password" id="p1" inputmode="numeric"></label>
       <label class="field"><span>PIN wiederholen</span><input class="input" type="password" id="p2" inputmode="numeric"></label>
-      <div class="foot"><button class="btn" data-close>Abbrechen</button><button class="btn primary" id="ok">${icon('unlock')}Festlegen</button></div>`);
-    m.querySelector('#ok').onclick = async () => {
+      <div class="foot"><button class="btn" data-close>Abbrechen</button><button class="btn primary" id="ok">${icon('unlock')}Prüfen &amp; freischalten</button></div>`);
+    m.querySelector('#newTk').onclick = (e) => { e.preventDefault(); openUrl('https://github.com/settings/tokens/new?scopes=public_repo&description=Mottenbande%20App'); };
+    m.querySelector('#ok').onclick = async (e) => {
+      const btn = e.currentTarget;
+      const token = m.querySelector('#tk').value.trim();
       const a = m.querySelector('#p1').value, b = m.querySelector('#p2').value;
+      if (!token) return toast('Bitte den GitHub-Token eingeben.', 'err');
       if (a.length < 4) return toast('Die PIN muss mindestens 4 Zeichen haben.', 'err');
       if (a !== b) return toast('Die PINs stimmen nicht überein.', 'err');
+      btn.disabled = true; btn.innerHTML = 'Prüfe bei GitHub…';
+      try { await verifyAdminToken(token); } catch (err) {
+        btn.disabled = false; btn.innerHTML = `${icon('unlock')}Prüfen &amp; freischalten`;
+        return toast(err.message, 'err', 7000);
+      }
+      S.admin.token = token;
       S.admin.pinHash = await sha256Hex('mb:' + a);
       await saveAdmin();
       S.settings.adminOn = true; await saveSettings();
-      m.close(); toast('Admin-Modus aktiv'); go('#/admin');
+      m.close(); toast('Admin-Zugang eingerichtet'); go('#/admin');
     };
     return;
   }
@@ -898,6 +925,8 @@ async function boot() {
   }
   Object.assign(S.settings, settings || {});
   Object.assign(S.admin, admin || {});
+  // Admin mode only on a device that holds the GitHub token (older versions allowed a PIN alone).
+  if (S.settings.adminOn && (!S.admin.token || WEB)) { S.settings.adminOn = false; await kv.set('settings', S.settings); }
   S.dirty = !!dirty;
   S.baseVersion = base || S.content.version;
   S.sync = syncCfg;
