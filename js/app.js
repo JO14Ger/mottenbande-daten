@@ -683,7 +683,8 @@ export async function checkUpdates({ manual = false } = {}) {
     S.syncInfo.error = '';
     if (!meta) { if (manual) toast('Es wurden noch keine Inhalte veröffentlicht.', 'info'); return; }
     if (meta.version <= S.content.version) { S.remoteNewer = 0; if (manual) toast('Alles aktuell – du hast den neuesten Stand.'); return; }
-    if (S.dirty) {
+    // Only the real admin device (with GitHub token) keeps unpublished edits; members always get the published state.
+    if (S.dirty && S.admin.token) {
       S.remoteNewer = meta.version;
       if (!manual) return;
       const ok = await confirmDlg('Neuere Version laden?', `Auf dem Server liegt Version ${meta.version}. Deine noch nicht veröffentlichten Änderungen auf diesem Gerät gehen dabei verloren.`, { ok: 'Laden', danger: true });

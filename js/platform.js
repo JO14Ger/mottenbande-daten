@@ -2,7 +2,7 @@
 const T = () => window.__TAURI__;
 export const isTauri = () => !!T();
 export const isAndroid = /Android/i.test(navigator.userAgent);
-export const APP_VERSION = '1.2.2';
+export const APP_VERSION = '1.2.4';
 
 export async function saveFile(name, bytes, ext = 'mbpaket') {
   const t = T();

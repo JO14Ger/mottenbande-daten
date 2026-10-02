@@ -278,6 +278,23 @@ async function addYear() {
   render();
 }
 
+/* ---------- WhatsApp sharing ---------- */
+function whatsappText(title, text) {
+  const web = S.sync && S.sync.webUrl ? `\n\niPhone/iPad/Mac: ${S.sync.webUrl}` : '';
+  return `📖 Neu im Mottenbande-Jahrbuch: ${title}${text ? `\n\n${text}` : ''}\n\nEinfach die Jahrbuch-App öffnen – das Update kommt automatisch.${web}\n\n${S.content.club.tagline}`;
+}
+
+function shareDialog(title, text, headline = 'Veröffentlicht!') {
+  const msg = whatsappText(title, text);
+  const m = modal(`<h2>${esc(headline)}</h2>
+    <p class="lead">Sag der Bande Bescheid: WhatsApp öffnet sich mit dieser Nachricht, du wählst nur noch die Gruppe und tippst auf Senden.</p>
+    <div class="code-box" style="white-space:pre-wrap;user-select:text;border-style:solid">${esc(msg)}</div>
+    <div class="foot"><button class="btn" id="shCopy">${icon('copy')}Kopieren</button>
+      <button class="btn primary" id="shWa" style="background:linear-gradient(180deg,#3fd477,#1faa53);border-color:#1a9a4a;color:#fff">${icon('newspaper')}In WhatsApp teilen</button></div>`);
+  m.querySelector('#shWa').onclick = () => { openUrl(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`); m.close(); };
+  m.querySelector('#shCopy').onclick = async () => { await copyText(msg); toast('Nachricht kopiert – in WhatsApp einfügen'); };
+}
+
 /* ---------- publish ---------- */
 async function publishDialog() {
   if (!S.sync || !S.admin.token) {
@@ -315,9 +332,12 @@ async function publishDialog() {
       await setDirty(false);
       await setBaseVersion(res.version);
       S.remoteNewer = 0;
+      S.settings.lastPublish = { version: res.version, title, text };
+      await saveSettings();
       m.close();
       toast(`Veröffentlicht – Version ${res.version}${res.uploaded ? ` · ${res.uploaded} Bilder hochgeladen` : ''}`, 'ok', 5000);
       render({ keepScroll: true });
+      shareDialog(title, text);
     } catch (e) {
       btn.disabled = false;
       m.querySelector('#pubProg').style.display = 'none';
@@ -348,6 +368,7 @@ function viewAdmin() {
         ${!ready ? '<br><span class="small" style="color:var(--danger)">Verteilung ist noch nicht eingerichtet (siehe unten).</span>' : ''}</div>
       <button class="btn primary" data-act="publish" ${S.dirty ? '' : 'disabled'}>${icon('cloudUp')}Veröffentlichen</button>
       ${ready ? `<button class="btn" data-act="checkNow">${icon('refresh')}Server prüfen</button>` : ''}
+      ${S.settings.lastPublish && !S.dirty ? `<button class="btn" data-act="shareLast">${icon('newspaper')}In WhatsApp teilen</button>` : ''}
     </div>
 
     <div class="section-title"><h2>Schnellaktionen</h2></div>
@@ -680,6 +701,7 @@ Object.assign(A, {
     }
     render({ keepScroll: true });
   },
+  shareLast: () => { const l = S.settings.lastPublish; if (l) shareDialog(l.title, l.text, `Version ${l.version} teilen`); },
   publishWeb: async (el) => {
     if (!S.sync || !S.admin.token) return;
     const m = modal(`<h2>Web-Version veröffentlichen</h2><p class="lead">Die App lädt sich selbst als Web-Version in deinen GitHub-Speicher und schaltet GitHub Pages ein. Fotos und Texte liegen dort nur verschlüsselt.</p>
