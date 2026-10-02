@@ -1,0 +1,9 @@
+{
+ "app": "mottenbande",
+ "version": 2,
+ "updatedAt": "2026-10-02T19:01:57.112Z",
+ "note": "Das Jahrbuch ist online",
+ "salt": "01mGNSCCxV1JkknIKvwDmw==",
+ "iter": 150000,
+ "schema": 1
+}
